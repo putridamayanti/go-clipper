@@ -26,9 +26,13 @@ You must have the following tools installed on your system:
     ```
 
 ## Usage
-Run the clipper by providing a YouTube URL:
+Run the clipper by providing a YouTube URL or a local file:
 ```bash
-go run cmd/clipper/main.go -url "https://www.youtube.com/watch?v=your_video_id"
+# From YouTube
+go run cmd/clipper/main.go -url "https://www.youtube.com/watch?v=..."
+
+# From Local File
+go run cmd/clipper/main.go -input "./videos/my_video.mp4"
 ```
 
 ### Custom Aspect Ratio
@@ -37,6 +41,20 @@ To format clips for TikTok/Shorts (9:16 vertical) or Instagram (1:1 square):
 go run cmd/clipper/main.go -url "..." -ratio 9:16
 ```
 *(Supports: 9:16, 1:1, 4:5, 16:9)*
+
+### Number of Clips
+To specify exactly how many viral clips Gemini should identify:
+```bash
+go run cmd/clipper/main.go -url "..." -count 5
+```
+*(Default: 3)*
+
+### Minimum Duration
+To ensure clips are not too short, specify the minimum duration in seconds:
+```bash
+go run cmd/clipper/main.go -url "..." -min 30
+```
+*(Default: 15 seconds)*
 
 ### Troubleshooting "Too Many Requests" (429)
 If you see `HTTP Error 429: Too Many Requests`, it means YouTube is throttling your IP. You can bypass this by passing cookies from your browser:
