@@ -2,20 +2,23 @@ package processor
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
 
 type Processor struct {
-	OutputDir   string
-	TargetRatio string // e.g. "9:16", "1:1"
+	OutputDir     string
+	TargetRatio   string // e.g. "9:16", "1:1"
+	BurnSubtitles bool
 }
 
-func NewProcessor(outputDir, targetRatio string) *Processor {
+func NewProcessor(outputDir, targetRatio string, burnSubtitles bool) *Processor {
 	return &Processor{
-		OutputDir:   outputDir,
-		TargetRatio: targetRatio,
+		OutputDir:     outputDir,
+		TargetRatio:   targetRatio,
+		BurnSubtitles: burnSubtitles,
 	}
 }
 
@@ -34,7 +37,13 @@ func (p *Processor) getDimensions() (int, int) {
 	}
 }
 
-func (p *Processor) CutClip(videoPath, start, end, hook string) (string, error) {
+type SubtitleLine struct {
+	Start float64
+	End   float64
+	Text  string
+}
+
+func (p *Processor) CutClip(videoPath, start, end, hook string, subtitles []SubtitleLine) (string, error) {
 	// Clean hook for filename
 	safeHook := strings.ReplaceAll(strings.ToLower(hook), " ", "_")
 	safeHook = strings.Map(func(r rune) rune {
@@ -52,18 +61,41 @@ func (p *Processor) CutClip(videoPath, start, end, hook string) (string, error) 
 		return "", fmt.Errorf("ffmpeg not found in PATH")
 	}
 
-	// Determine filters
-	vf := ""
+	// 1. Generate SRT file if subtitles exist
+	var srtPath string
+	if len(subtitles) > 0 {
+		srtPath = filepath.Join(p.OutputDir, safeHook+".srt")
+		err := p.generateSRT(srtPath, subtitles)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate SRT: %v", err)
+		}
+		// We no longer remove the SRT file as the user wants to keep it
+	}
+
+	// 2. Determine filters
+	var filters []string
 	w, h := p.getDimensions()
 	if w > 0 && h > 0 {
 		// Scale to fit (contained) and pad to target ratio
-		vf = fmt.Sprintf("scale=w=%d:h=%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2", w, h, w, h)
+		filters = append(filters, fmt.Sprintf("scale=w=%d:h=%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2", w, h, w, h))
 	}
 
+	if srtPath != "" && p.BurnSubtitles {
+		// Burn subtitles with some styling (centered, yellow text, outline)
+		// Note: FFmpeg's subtitles filter path needs careful escaping on Windows, but on Mac/Linux it's usually fine.
+		// We'll use absolute path for safety.
+		absSRT, _ := filepath.Abs(srtPath)
+		style := "FontSize=24,PrimaryColour=&H00FFFF,OutlineColour=&H000000,BorderStyle=1,Outline=1,Shadow=0,Alignment=2"
+		filters = append(filters, fmt.Sprintf("subtitles='%s':force_style='%s'", absSRT, style))
+	}
+
+	vf := strings.Join(filters, ",")
+
 	args := []string{
+		"-i", videoPath,
 		"-ss", start,
 		"-to", end,
-		"-i", videoPath,
+		"-avoid_negative_ts", "make_zero",
 	}
 
 	if vf != "" {
@@ -76,6 +108,7 @@ func (p *Processor) CutClip(videoPath, start, end, hook string) (string, error) 
 		"-c:a", "aac",
 		"-b:a", "128k",
 		"-ar", "44100",
+		"-map_metadata", "-1", // Strip metadata that might have old timestamps
 		"-strict", "experimental",
 		"-y",
 		outputPath,
@@ -83,11 +116,34 @@ func (p *Processor) CutClip(videoPath, start, end, hook string) (string, error) 
 
 	cmd := exec.Command("ffmpeg", args...)
 
-	fmt.Printf("Clipping segment: %s -> %s (Hook: %s, Ratio: %s)\n", start, end, hook, p.TargetRatio)
+	fmt.Printf("Clipping segment: %s -> %s (Hook: %s, Ratio: %s, Subtitles: %t)\n", start, end, hook, p.TargetRatio, len(subtitles) > 0)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("failed to cut clip: %v\nOutput: %s", err, string(output))
 	}
 
 	return outputPath, nil
+}
+
+func (p *Processor) generateSRT(path string, subtitles []SubtitleLine) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	for i, line := range subtitles {
+		start := formatSRTTime(line.Start)
+		end := formatSRTTime(line.End)
+		fmt.Fprintf(f, "%d\n%s --> %s\n%s\n\n", i+1, start, end, line.Text)
+	}
+	return nil
+}
+
+func formatSRTTime(seconds float64) string {
+	h := int(seconds) / 3600
+	m := (int(seconds) % 3600) / 60
+	s := int(seconds) % 60
+	ms := int((seconds - float64(int(seconds))) * 1000)
+	return fmt.Sprintf("%02d:%02d:%02d,%03d", h, m, s, ms)
 }

@@ -3,10 +3,13 @@
 An automated YouTube video clipper that uses AI (Gemini 1.5 Flash) to identify viral segments and cut them automatically for short-form content.
 
 ## Features
+- **Flexible Source**: Process YouTube links or local video files.
 - **YouTube Downloader**: Downloads high-quality video using `yt-dlp`.
-- **AI Analysis**: Uses Gemini 1.5 Flash to "watch" the video and find high-engagement segments.
+- **English Translation**: Automatically translates foreign speech (Korean, Chinese, etc.) to English.
+- **Standalone SRT**: Generates a matching `.srt` file for every clip automatically.
+- **AI Analysis**: Uses Gemini 1.5 Flash to find high-engagement segments.
 - **Auto-Clipping**: Extracts segments using `ffmpeg` with precise timestamps.
-- **Local Storage**: Saves all clips locally in your desired output folder.
+- **Optional Hard-Subbing**: Use the `-burn` flag to bake captions into the video.
 
 ## Prerequisites
 You must have the following tools installed on your system:
@@ -55,6 +58,12 @@ To ensure clips are not too short, specify the minimum duration in seconds:
 go run cmd/clipper/main.go -url "..." -min 30
 ```
 *(Default: 15 seconds)*
+
+### Subtitles & Burning
+By default, the tool saves a separate `.srt` file next to each clip. If you want to burn (hard-sub) the English captions into the video:
+```bash
+go run cmd/clipper/main.go -url "..." -burn
+```
 
 ### Troubleshooting "Too Many Requests" (429)
 If you see `HTTP Error 429: Too Many Requests`, it means YouTube is throttling your IP. You can bypass this by passing cookies from your browser:
