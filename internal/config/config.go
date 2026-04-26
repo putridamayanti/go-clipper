@@ -8,7 +8,8 @@ import (
 )
 
 type Config struct {
-	GeminiAPIKey string
+	GeminiAPIKey           string
+	GeminiAPIKeyForCaption string
 }
 
 func LoadConfig() *Config {
@@ -22,7 +23,13 @@ func LoadConfig() *Config {
 		log.Fatal("GEMINI_API_KEY is required")
 	}
 
+	apiKeyForCaption := os.Getenv("GEMINI_API_KEY_FOR_CAPTION")
+	if apiKeyForCaption == "" {
+		log.Fatal("GEMINI_API_KEY_FOR_CAPTION is required")
+	}
+
 	return &Config{
-		GeminiAPIKey: apiKey,
+		GeminiAPIKey:           apiKey,
+		GeminiAPIKeyForCaption: apiKeyForCaption,
 	}
 }

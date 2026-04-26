@@ -52,7 +52,6 @@ func (a *Analyzer) AnalyzeVideoUrl(ctx context.Context, url string, count, minSe
 		1. Identify exactly %d of the most engaging and "viral" segments that would make great short-form clips (TikTok, Reels, Shorts).
 		2. Ensure each segment is at least %d seconds long and maximum %d seconds.
 		3. For each segment, provide the start and end timestamps (in seconds). THESE ARE MANDATORY.
-		4. For each segment, provide a word-for-word (or sentence-by-sentence) English translation transcript with timestamps relative to the start of that segment.
 		5. Provide a brief description and a compelling "hook" title for each clip. THE HOOK MUST NOT BE EMPTY.
 
 		Output the result as a single JSON object in the following format:
@@ -63,11 +62,7 @@ func (a *Analyzer) AnalyzeVideoUrl(ctx context.Context, url string, count, minSe
 					"start": "30",
 					"end": "60",
 					"description": "Deep insight about AI",
-					"hook": "The Truth About AI",
-					"subtitles": [
-						{"start": 0.5, "end": 2.0, "text": "AI is changing the world"},
-						{"start": 2.5, "end": 4.5, "text": "And we need to be ready"}
-					]
+					"hook": "The Truth About AI"
 				}
 			]
 		}
@@ -79,16 +74,6 @@ func (a *Analyzer) AnalyzeVideoUrl(ctx context.Context, url string, count, minSe
 		parts := strings.Split(cleanURL, "&")
 		cleanURL = parts[0]
 	}
-
-	// parts := []*genai.Part{
-	// 	genai.NewPartFromText(prompt),
-	// 	genai.NewPartFromURI(cleanURL, "video/mp4"),
-	// }
-
-	// config := &genai.GenerateContentConfig{
-	// 	ResponseMIMEType: "application/json",
-	// }
-	// resp, err := a.client.Models.GenerateContent(ctx, "gemini-3-flash-preview", parts, config)
 
 	parts := []*genai.Part{
 		genai.NewPartFromText(prompt),
@@ -150,6 +135,8 @@ func (a *Analyzer) AnalyzeVideoUrl(ctx context.Context, url string, count, minSe
 			}
 		}
 	}
+
+	log.Println("Segments: ", len(result.Segments))
 
 	return &result, nil
 }
