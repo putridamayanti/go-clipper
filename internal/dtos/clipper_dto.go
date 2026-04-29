@@ -13,5 +13,15 @@ type AnalyzeRequest struct {
 	ExtractAudio  bool `json:"extract_audio"`
 }
 
-type CutVideoRequest struct {
+type CutClipPayload struct {
+	SourceVideoPath string `json:"source_video_path"`
+	OutputPath      string `json:"output_path"`
+	Hook            string `json:"hook"`
+	StartSeconds    string `json:"start_seconds"`
+	EndSeconds      string `json:"end_seconds"`
+}
+
+type GenerateCaptionRequest struct {
+	ClipsPath  string   `json:"clips_path"`
+	VideosPath []string `json:"videos_path"`
 }

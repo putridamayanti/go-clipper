@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"google.golang.org/genai"
 	//"github.com/google/generative-ai-go/genai"
@@ -46,13 +47,15 @@ func NewAnalyzer(ctx context.Context, apiKey string) (*Analyzer, error) {
 }
 
 func (a *Analyzer) AnalyzeVideoUrl(ctx context.Context, url string, count, minSeconds, maxSeconds int) (*AnalysisResult, error) {
+	start := time.Now()
+
 	log.Printf("Analyzing video url: %s", url)
 	prompt := fmt.Sprintf(`
 		Analyze the provided video.
 		1. Identify exactly %d of the most engaging and "viral" segments that would make great short-form clips (TikTok, Reels, Shorts).
 		2. Ensure each segment is at least %d seconds long and maximum %d seconds.
 		3. For each segment, provide the start and end timestamps (in seconds). THESE ARE MANDATORY.
-		5. Provide a brief description and a compelling "hook" title for each clip. THE HOOK MUST NOT BE EMPTY.
+		4. Provide a brief description and a compelling "hook" title for each clip. THE HOOK MUST NOT BE EMPTY.
 
 		Output the result as a single JSON object in the following format:
 		{
@@ -84,8 +87,30 @@ func (a *Analyzer) AnalyzeVideoUrl(ctx context.Context, url string, count, minSe
 		genai.NewContentFromParts(parts, genai.RoleUser),
 	}
 
+	schema := &genai.Schema{
+		Type: genai.TypeObject,
+		Properties: map[string]*genai.Schema{
+			"description": {Type: genai.TypeString},
+			"segments": {
+				Type: genai.TypeArray,
+				Items: &genai.Schema{
+					Type: genai.TypeObject,
+					Properties: map[string]*genai.Schema{
+						"start":       {Type: genai.TypeString},
+						"end":         {Type: genai.TypeString},
+						"description": {Type: genai.TypeString},
+						"hook":        {Type: genai.TypeString},
+					},
+					Required: []string{"start", "end", "description", "hook"},
+				},
+			},
+		},
+		Required: []string{"description", "segments"},
+	}
+
 	config := &genai.GenerateContentConfig{
 		ResponseMIMEType: "application/json",
+		ResponseSchema:   schema,
 	}
 
 	resp, err := a.client.Models.GenerateContent(
@@ -94,6 +119,10 @@ func (a *Analyzer) AnalyzeVideoUrl(ctx context.Context, url string, count, minSe
 		contents,
 		config,
 	)
+
+	latency := time.Since(start)
+	log.Printf("Analyzing video %s latency: %s", url, latency)
+	
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate content: %v", err)
 	}
@@ -102,36 +131,37 @@ func (a *Analyzer) AnalyzeVideoUrl(ctx context.Context, url string, count, minSe
 		return nil, fmt.Errorf("no analysis results returned")
 	}
 
+	cand := resp.Candidates[0]
+	log.Printf("Finish Reason: %v", cand.FinishReason)
+
+	if len(cand.Content.Parts) == 0 {
+		return nil, fmt.Errorf("no content parts in response")
+	}
+
 	// 3. Parse the JSON response
 	var result AnalysisResult
-	part := resp.Candidates[0].Content.Parts[0]
-	if part.Text != "" {
-		log.Println(part.Text)
+	rawText := cand.Content.Parts[0].Text
+	if rawText != "" {
+		log.Printf("Raw Analysis Output: %s", rawText)
 
-		// Clean the response from potential markdown code blocks
-		rawText := part.Text
-		if strings.HasPrefix(rawText, "```json") {
-			rawText = strings.TrimPrefix(rawText, "```json")
-			rawText = strings.TrimSuffix(rawText, "```")
-		} else if strings.HasPrefix(rawText, "```") {
-			rawText = strings.TrimPrefix(rawText, "```")
-			rawText = strings.TrimSuffix(rawText, "```")
-		}
-		rawText = strings.TrimSpace(rawText)
-
-		// Handle both object and array responses
-		if strings.HasPrefix(rawText, "[") {
-			var segments []Segment
-			err = json.Unmarshal([]byte(rawText), &segments)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse JSON array: %v\nRaw: %s", err, rawText)
+		err = json.Unmarshal([]byte(rawText), &result)
+		if err != nil {
+			// Fallback: try to strip markdown if the model still includes it
+			cleanText := rawText
+			if strings.Contains(cleanText, "```json") {
+				parts := strings.Split(cleanText, "```json")
+				if len(parts) > 1 {
+					cleanText = strings.Split(parts[1], "```")[0]
+				}
+			} else if strings.HasPrefix(cleanText, "```") {
+				cleanText = strings.TrimPrefix(cleanText, "```")
+				cleanText = strings.TrimSuffix(cleanText, "```")
 			}
-			result.Segments = segments
-			result.Description = "Generated segments"
-		} else {
-			err = json.Unmarshal([]byte(rawText), &result)
+			cleanText = strings.TrimSpace(cleanText)
+
+			err = json.Unmarshal([]byte(cleanText), &result)
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse JSON object: %v\nRaw: %s", err, rawText)
+				return nil, fmt.Errorf("failed to parse JSON: %v\nRaw: %s", err, rawText)
 			}
 		}
 	}

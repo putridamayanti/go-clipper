@@ -2,6 +2,8 @@ package processor
 
 import (
 	"fmt"
+	"go-clipper/internal/dtos"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,6 +43,71 @@ type SubtitleLine struct {
 	Start float64
 	End   float64
 	Text  string
+}
+
+func (p *Processor) CutVideoToClips(payload dtos.CutClipPayload) (string, error) {
+	safeHook := strings.ReplaceAll(strings.ToLower(payload.Hook), " ", "_")
+	safeHook = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
+			return r
+		}
+		return -1
+	}, safeHook)
+
+	log.Println("Cut video clip: ", safeHook)
+
+	fileName := fmt.Sprintf("%s.mp4", safeHook)
+	outputPath := filepath.Join(p.OutputDir, fileName)
+	//if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+	//	err := os.Mkdir(p.OutputDir, 0755)
+	//	if err != nil {
+	//		log.Fatal(err)
+	//	}
+	//	fmt.Println("Directory created")
+	//}
+
+	var filters []string
+	w, h := p.getDimensions()
+	if w > 0 && h > 0 {
+		// Scale to fit (contained) and pad to target ratio
+		filters = append(filters, fmt.Sprintf("scale=w=%d:h=%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2", w, h, w, h))
+	}
+
+	vf := strings.Join(filters, ",")
+
+	args := []string{
+		"-i", payload.SourceVideoPath,
+		"-ss", payload.StartSeconds,
+		"-to", payload.EndSeconds,
+		"-avoid_negative_ts", "make_zero",
+	}
+
+	if vf != "" {
+		args = append(args, "-vf", vf)
+	}
+
+	args = append(args,
+		"-c:v", "libx264",
+		"-preset", "veryfast",
+		"-c:a", "aac",
+		"-b:a", "128k",
+		"-ar", "44100",
+		"-map_metadata", "-1", // Strip metadata that might have old timestamps
+		"-strict", "experimental",
+		"-y",
+		outputPath,
+	)
+
+	cmd := exec.Command("ffmpeg", args...)
+
+	fmt.Printf("Clipping segment: %s -> %s (Hook: %s, Ratio: %s)\n",
+		payload.StartSeconds, payload.EndSeconds, payload.Hook, p.TargetRatio)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to cut clip: %v\nOutput: %s", err, string(output))
+	}
+
+	return outputPath, nil
 }
 
 func (p *Processor) CutClip(videoPath, start, end, hook string, subtitles []SubtitleLine) (string, error) {

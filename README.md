@@ -72,6 +72,16 @@ go run cmd/clipper/main.go -url "..." -cookies chrome
 ```
 *(Supports: chrome, safari, firefox, edge, opera)*
 
+### Captioner Tool
+If you have existing clips in `output/clips` and want to generate SRT subtitles for all of them using Gemini:
+```bash
+go run cmd/captioner/main.go
+```
+This tool will:
+1. Scan all `.mp4` files in `output/clips`.
+2. Upload each video to Gemini.
+3. Generate and save a matching `.srt` subtitle file for each clip.
+
 The clips will be saved in the `./output` directory by default. You can change this using the `-out` flag:
 ```bash
 go run cmd/clipper/main.go -url "..." -out "./my_clips"

@@ -22,11 +22,17 @@ func main() {
 		log.Fatal(err)
 	}
 
-	clipperController := controllers.NewClipperController(*analyzer)
+	captioner, err := analyzer2.NewCaptioner(ctx, cfg.GeminiAPIKeyForCaption)
+	if err != nil {
+		log.Fatalf("Error initializing captioner: %v", err)
+	}
+
+	clipperController := controllers.NewClipperController(*analyzer, *captioner)
 
 	api := r.Group("/api/v1")
 	{
 		api.POST("/clipper", clipperController.Create)
+		api.POST("/clipper/captions", clipperController.GenerateCaption)
 	}
 
 	// Define a simple GET endpoint
