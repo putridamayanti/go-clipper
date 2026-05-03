@@ -41,28 +41,45 @@ func (cl *ClipperController) Create(c *gin.Context) {
 		return
 	}
 
-	if _, err := os.Stat(request.OutputPath); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(request.OutputPath, 0755)
+	outputPath := "./output"
+	if _, err := os.Stat(outputPath); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(outputPath, 0755)
 		if err != nil {
 			log.Fatal(err)
 		}
 		fmt.Println("Directory created")
 	}
 
-	resAnalyze, err := cl.analyzer.AnalyzeVideoUrl(
-		c.Request.Context(),
-		request.YoutubeUrl,
-		request.Count,
-		request.MinimumDuration,
-		request.MaximumDuration)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	var resAnalyze *analyzer.AnalysisResult
+
+	if request.WithoutAnalyze && len(request.Segments) > 0 {
+		resAnalyze = &analyzer.AnalysisResult{
+			Description: "",
+			Segments:    request.Segments,
+		}
+	} else {
+		result, err := cl.analyzer.AnalyzeVideoUrl(
+			c.Request.Context(),
+			request.YoutubeUrl,
+			request.Count,
+			request.MinimumDuration,
+			request.MaximumDuration)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		resAnalyze = result
+	}
+
+	if resAnalyze == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "You need to specify analyze video url"})
 		return
 	}
 
 	if request.DownloadVideo {
 		log.Println("Downloading video...")
-		dl := downloader.NewDownloader(request.OutputPath, "")
+		dl := downloader.NewDownloader(outputPath, "")
 		downloadedPath, err := dl.DownloadVideo(request.YoutubeUrl)
 		if err != nil {
 			log.Fatalf("Error downloading video: %v", err)
