@@ -58,13 +58,14 @@ func (p *Processor) CutVideoToClips(payload dtos.CutClipPayload) (string, error)
 
 	fileName := fmt.Sprintf("%s.mp4", safeHook)
 	outputPath := filepath.Join(p.OutputDir, fileName)
-	//if _, err := os.Stat(outputPath); os.IsNotExist(err) {
-	//	err := os.Mkdir(p.OutputDir, 0755)
-	//	if err != nil {
-	//		log.Fatal(err)
-	//	}
-	//	fmt.Println("Directory created")
-	//}
+	_, err := os.Stat(p.OutputDir)
+	if err != nil && os.IsNotExist(err) {
+		err := os.Mkdir(p.OutputDir, 0755)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("Directory created")
+	}
 
 	var filters []string
 	w, h := p.getDimensions()
@@ -149,11 +150,14 @@ func (p *Processor) CutClip(videoPath, start, end, hook string, subtitles []Subt
 
 	if srtPath != "" && p.BurnSubtitles {
 		// Burn subtitles with some styling (centered, yellow text, outline)
-		// Note: FFmpeg's subtitles filter path needs careful escaping on Windows, but on Mac/Linux it's usually fine.
-		// We'll use absolute path for safety.
 		absSRT, _ := filepath.Abs(srtPath)
+		// On Windows, the colon in "C:\path" needs to be escaped as "C\:" for FFmpeg filters
+		// and backslashes should be forward slashes or escaped.
+		escapedSRT := filepath.ToSlash(absSRT)
+		escapedSRT = strings.ReplaceAll(escapedSRT, ":", "\\:")
+
 		style := "FontSize=24,PrimaryColour=&H00FFFF,OutlineColour=&H000000,BorderStyle=1,Outline=1,Shadow=0,Alignment=2"
-		filters = append(filters, fmt.Sprintf("subtitles='%s':force_style='%s'", absSRT, style))
+		filters = append(filters, fmt.Sprintf("subtitles='%s':force_style='%s'", escapedSRT, style))
 	}
 
 	vf := strings.Join(filters, ",")

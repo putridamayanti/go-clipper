@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -50,10 +49,10 @@ func (cl *ClipperController) Create(c *gin.Context) {
 		fmt.Println("Directory created")
 	}
 
-	var resAnalyze *analyzer.AnalysisResult
+	var resAnalyze *dtos.AnalysisResult
 
 	if request.WithoutAnalyze && len(request.Segments) > 0 {
-		resAnalyze = &analyzer.AnalysisResult{
+		resAnalyze = &dtos.AnalysisResult{
 			Description: "",
 			Segments:    request.Segments,
 		}
@@ -61,9 +60,7 @@ func (cl *ClipperController) Create(c *gin.Context) {
 		result, err := cl.analyzer.AnalyzeVideoUrl(
 			c.Request.Context(),
 			request.YoutubeUrl,
-			request.Count,
-			request.MinimumDuration,
-			request.MaximumDuration)
+			request)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -80,7 +77,7 @@ func (cl *ClipperController) Create(c *gin.Context) {
 	if request.DownloadVideo {
 		log.Println("Downloading video...")
 		dl := downloader.NewDownloader(outputPath, "")
-		downloadedPath, err := dl.DownloadVideo(request.YoutubeUrl)
+		downloadedPath, err := dl.DownloadVideo(request.YoutubeUrl, request.IncludeSubtitle)
 		if err != nil {
 			log.Fatalf("Error downloading video: %v", err)
 		}
@@ -89,32 +86,13 @@ func (cl *ClipperController) Create(c *gin.Context) {
 	}
 
 	proc := processor.NewProcessor(request.OutputPath, request.Ratio, false)
+	clipPaths := make([]string, 0)
 	for i, segment := range resAnalyze.Segments {
 		if segment.Start == "" || segment.End == "" || segment.Hook == "" {
 			fmt.Printf("[%d] Warning: Skipping invalid segment (missing start/end/hook): %+v\n", i+1, segment)
 			continue
 		}
 		fmt.Printf("[%d] Processing: %s (%s to %s)\n", i+1, segment.Hook, segment.Start, segment.End)
-
-		segmentStart, _ := strconv.ParseFloat(segment.Start, 64)
-		var subs []processor.SubtitleLine
-		for _, s := range segment.Subtitles {
-			startTs := s.Start
-			endTs := s.End
-
-			// If the subtitle start is >= segment start, it's likely an absolute timestamp.
-			// We need it to be relative to 0 for the clipped video.
-			if startTs >= segmentStart {
-				startTs -= segmentStart
-				endTs -= segmentStart
-			}
-
-			subs = append(subs, processor.SubtitleLine{
-				Start: startTs,
-				End:   endTs,
-				Text:  s.Text,
-			})
-		}
 
 		payload := dtos.CutClipPayload{
 			SourceVideoPath: request.VideoPath,
@@ -129,9 +107,74 @@ func (cl *ClipperController) Create(c *gin.Context) {
 			continue
 		}
 		fmt.Printf("Clip saved: %s\n", clipPath)
+		clipPaths = append(clipPaths, clipPath)
+	}
+
+	if request.WithCaption {
+		clipsDir := "./output/clips"
+		files, err := os.ReadDir(clipsDir)
+		if err != nil {
+			log.Fatalf("Error reading clips directory: %v", err)
+		}
+
+		srtPaths := make([]string, 0)
+
+		for _, file := range files {
+			videoPath := filepath.Join(clipsDir, file.Name())
+			srtPath := strings.TrimSuffix(videoPath, ".mp4") + ".srt"
+
+			// Check if SRT already exists
+			if _, err := os.Stat(srtPath); err == nil {
+				fmt.Printf("SRT already exists for %s, skipping...\n", file.Name())
+				continue
+			}
+
+			fmt.Printf("Processing %s...\n", file.Name())
+			srtContent, err := cl.captioner.GenerateSRT(c.Request.Context(), videoPath)
+			if err != nil {
+				fmt.Printf("Error generating SRT for %s: %v\n", file.Name(), err)
+				continue
+			}
+
+			err = os.WriteFile(srtPath, []byte(srtContent), 0644)
+			if err != nil {
+				fmt.Printf("Error writing SRT file for %s: %v\n", file.Name(), err)
+				continue
+			}
+
+			srtPaths = append(srtPaths, srtPath)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": resAnalyze})
+}
+
+func (cl *ClipperController) Download(c *gin.Context) {
+	var request dtos.DownloadVideoRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	outputPath := "./output"
+	if _, err := os.Stat(outputPath); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(outputPath, 0755)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("Directory created")
+	}
+
+	log.Println("Downloading video...")
+	dl := downloader.NewDownloader(outputPath, "")
+	downloadedPath, err := dl.DownloadVideo(request.YoutubeUrl, request.IncludeSubtitle)
+	if err != nil {
+		log.Fatalf("Error downloading video: %v", err)
+	}
+	request.VideoPath = filepath.Clean(downloadedPath)
+	fmt.Printf("Video downloaded to: %s\n", request.VideoPath)
+
+	c.JSON(http.StatusOK, gin.H{"data": request.VideoPath})
 }
 
 func (cl *ClipperController) Analyze(c *gin.Context) {
@@ -144,9 +187,7 @@ func (cl *ClipperController) Analyze(c *gin.Context) {
 	resAnalyze, err := cl.analyzer.AnalyzeVideoUrl(
 		c.Request.Context(),
 		request.YoutubeUrl,
-		request.Count,
-		request.MaximumDuration,
-		request.MaximumDuration)
+		request)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -208,4 +249,20 @@ func (cl *ClipperController) GenerateCaption(c *gin.Context) {
 	fmt.Println("\nAll captioning tasks completed!")
 
 	c.JSON(http.StatusOK, gin.H{"data": srtPaths})
+}
+
+func (cl *ClipperController) GenerateDescription(c *gin.Context) {
+	var request dtos.AnalyzeRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	res, err := cl.analyzer.GenerateDescription(c.Request.Context(), request.YoutubeUrl)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": res})
 }

@@ -25,6 +25,7 @@ func main() {
 	count := flag.Int("count", 3, "Number of clips to generate")
 	minLen := flag.Int("min", 15, "Minimum duration of each clip in seconds")
 	burn := flag.Bool("burn", false, "Burn subtitles into video")
+	sub := flag.Bool("sub", false, "Download and embed English subtitles")
 	flag.Parse()
 
 	if *youtubeURL == "" && *inputPath == "" {
@@ -70,7 +71,7 @@ func main() {
 		//	audioPath = *inputAudioPath
 		//}
 	} else {
-		downloadedPath, err := dl.DownloadVideo(*youtubeURL)
+		downloadedPath, err := dl.DownloadVideo(*youtubeURL, *sub)
 		if err != nil {
 			log.Fatalf("Error downloading video: %v", err)
 		}

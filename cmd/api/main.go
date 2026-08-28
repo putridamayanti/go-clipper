@@ -32,6 +32,9 @@ func main() {
 	api := r.Group("/api/v1")
 	{
 		api.POST("/clipper", clipperController.Create)
+		api.POST("/download", clipperController.Download)
+		api.POST("/analyze", clipperController.Analyze)
+		api.POST("/generate-description", clipperController.GenerateDescription)
 		api.POST("/clipper/captions", clipperController.GenerateCaption)
 	}
 
