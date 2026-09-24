@@ -10,6 +10,8 @@ import (
 type Config struct {
 	GeminiAPIKey           string
 	GeminiAPIKeyForCaption string
+	GeminiModel            string
+	GeminiModelForCaption  string
 }
 
 func LoadConfig() *Config {
@@ -28,8 +30,20 @@ func LoadConfig() *Config {
 		log.Fatal("GEMINI_API_KEY_FOR_CAPTION is required")
 	}
 
+	model := os.Getenv("GEMINI_MODEL")
+	if model == "" {
+		model = "gemini-3-flash-preview"
+	}
+
+	modelForCaption := os.Getenv("GEMINI_MODEL_FOR_CAPTION")
+	if modelForCaption == "" {
+		modelForCaption = model
+	}
+
 	return &Config{
 		GeminiAPIKey:           apiKey,
 		GeminiAPIKeyForCaption: apiKeyForCaption,
+		GeminiModel:            model,
+		GeminiModelForCaption:  modelForCaption,
 	}
 }

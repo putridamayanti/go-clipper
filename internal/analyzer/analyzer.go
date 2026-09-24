@@ -21,9 +21,10 @@ type SubtitleLine struct {
 
 type Analyzer struct {
 	client *genai.Client
+	model  string
 }
 
-func NewAnalyzer(ctx context.Context, apiKey string) (*Analyzer, error) {
+func NewAnalyzer(ctx context.Context, apiKey, model string) (*Analyzer, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  apiKey,
 		Backend: genai.BackendGeminiAPI,
@@ -31,7 +32,7 @@ func NewAnalyzer(ctx context.Context, apiKey string) (*Analyzer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Analyzer{client: client}, nil
+	return &Analyzer{client: client, model: model}, nil
 }
 
 func (a *Analyzer) AnalyzeVideoUrl(ctx context.Context, url string, payload dtos.AnalyzeRequest) (*dtos.AnalysisResult, error) {
@@ -112,7 +113,7 @@ func (a *Analyzer) AnalyzeVideoUrl(ctx context.Context, url string, payload dtos
 
 	resp, err := a.client.Models.GenerateContent(
 		ctx,
-		"gemini-3-flash-preview",
+		a.model,
 		contents,
 		config,
 	)
@@ -215,7 +216,7 @@ func (a *Analyzer) GenerateDescription(ctx context.Context, url string) (*dtos.D
 
 	resp, err := a.client.Models.GenerateContent(
 		ctx,
-		"gemini-3-flash-preview",
+		a.model,
 		contents,
 		config,
 	)

@@ -17,12 +17,12 @@ func main() {
 	cfg := config.LoadConfig()
 	ctx := context.Background()
 
-	analyzer, err := analyzer2.NewAnalyzer(ctx, cfg.GeminiAPIKey)
+	analyzer, err := analyzer2.NewAnalyzer(ctx, cfg.GeminiAPIKey, cfg.GeminiModel)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	captioner, err := analyzer2.NewCaptioner(ctx, cfg.GeminiAPIKeyForCaption)
+	captioner, err := analyzer2.NewCaptioner(ctx, cfg.GeminiAPIKeyForCaption, cfg.GeminiModelForCaption)
 	if err != nil {
 		log.Fatalf("Error initializing captioner: %v", err)
 	}
