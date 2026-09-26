@@ -80,7 +80,7 @@ func main() {
 	}
 
 	// 4. Analyze with Gemini
-	az, err := analyzer.NewAnalyzer(ctx, cfg.GeminiAPIKey)
+	az, err := analyzer.NewAnalyzer(ctx, cfg.GeminiAPIKey, cfg.GeminiModel)
 	if err != nil {
 		log.Fatalf("Error initializing analyzer: %v", err)
 	}

@@ -20,8 +20,9 @@ type Config struct {
 	GeminiAPIKey           string
 	GeminiAPIKeyForCaption string
 	GeminiModel            string
+	GeminiModelForCaption  string // Defaults to GeminiModel
 
-	OpenAIAPIKey          string
+	OpenAIAPIKey         string
 	OpenAIBaseURL         string
 	OpenAIModel           string // Chat model used to analyze segments and write descriptions
 	OpenAITranscribeModel string // Speech-to-text model; must support SRT output (e.g. whisper-1)
@@ -38,10 +39,14 @@ func LoadConfig() *Config {
 		GeminiAPIKey:           os.Getenv("GEMINI_API_KEY"),
 		GeminiAPIKeyForCaption: os.Getenv("GEMINI_API_KEY_FOR_CAPTION"),
 		GeminiModel:            getEnv("GEMINI_MODEL", "gemini-3-flash-preview"),
+		GeminiModelForCaption:  os.Getenv("GEMINI_MODEL_FOR_CAPTION"),
 		OpenAIAPIKey:           os.Getenv("OPENAI_API_KEY"),
 		OpenAIBaseURL:          strings.TrimRight(getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1"), "/"),
 		OpenAIModel:            os.Getenv("OPENAI_MODEL"),
 		OpenAITranscribeModel:  getEnv("OPENAI_TRANSCRIBE_MODEL", "whisper-1"),
+	}
+	if cfg.GeminiModelForCaption == "" {
+		cfg.GeminiModelForCaption = cfg.GeminiModel
 	}
 
 	switch cfg.Provider {

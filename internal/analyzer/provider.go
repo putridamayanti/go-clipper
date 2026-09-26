@@ -31,7 +31,7 @@ func NewFromConfig(ctx context.Context, cfg *config.Config) (VideoAnalyzer, Subt
 		if err != nil {
 			return nil, nil, fmt.Errorf("initializing Gemini analyzer: %v", err)
 		}
-		cp, err := NewCaptioner(ctx, cfg.GeminiAPIKeyForCaption, cfg.GeminiModel)
+		cp, err := NewCaptioner(ctx, cfg.GeminiAPIKeyForCaption, cfg.GeminiModelForCaption)
 		if err != nil {
 			return nil, nil, fmt.Errorf("initializing Gemini captioner: %v", err)
 		}
