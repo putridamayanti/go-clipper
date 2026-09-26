@@ -58,9 +58,7 @@ func (d *Downloader) DownloadVideo(url string, includeSubtitle bool) (string, er
 		)
 	}
 
-	if d.CookiesBrowser != "" {
-		args = append(args, "--cookies-from-browser", d.CookiesBrowser)
-	}
+	args = append(args, d.commonArgs()...)
 
 	log.Println(args)
 
@@ -84,18 +82,13 @@ func (d *Downloader) DownloadVideo(url string, includeSubtitle bool) (string, er
 	if len(lines) > 0 && lines[len(lines)-1] != "" {
 		videoPath := strings.TrimSpace(lines[len(lines)-1])
 		if _, statErr := os.Stat(videoPath); statErr == nil {
+			// Subtitles are kept as a sidecar .srt next to the video so each clip
+			// can get its own sliced .srt later (see FindSubtitleFile).
 			if includeSubtitle {
-				srtPath := d.FindSubtitleFile(videoPath)
-				if srtPath != "" {
-					burnedPath, burnErr := d.BurnSubtitles(videoPath, srtPath)
-					if burnErr != nil {
-						fmt.Printf("Warning: Failed to burn subtitles into video: %v\nContinuing with unburned video.\n", burnErr)
-					} else {
-						videoPath = burnedPath
-						fmt.Println("Successfully burned English subtitles into video.")
-					}
+				if srtPath := FindSubtitleFile(videoPath); srtPath != "" {
+					fmt.Printf("YouTube subtitles saved to: %s\n", srtPath)
 				} else {
-					fmt.Println("Warning: Subtitle file not found on disk. Continuing with unburned video.")
+					fmt.Println("Warning: This video has no English subtitles on YouTube.")
 				}
 			}
 			return videoPath, nil
@@ -107,6 +100,86 @@ func (d *Downloader) DownloadVideo(url string, includeSubtitle bool) (string, er
 	}
 
 	return "", fmt.Errorf("could not determine downloaded video path. Output: %s", stdout)
+}
+
+// commonArgs returns the yt-dlp flags shared by every download.
+func (d *Downloader) commonArgs() []string {
+	var args []string
+
+	// yt-dlp needs a JS runtime to get full YouTube formats and only enables deno
+	// by default, so fall back to node when deno isn't installed.
+	if _, err := exec.LookPath("deno"); err != nil {
+		if _, err := exec.LookPath("node"); err == nil {
+			args = append(args, "--js-runtimes", "node")
+		}
+	}
+
+	if d.CookiesBrowser != "" {
+		args = append(args, "--cookies-from-browser", d.CookiesBrowser)
+	}
+	return args
+}
+
+// DownloadTranscriptSource fetches what's needed to build a transcript without
+// downloading the video: English subtitles (uploaded or auto-generated) if the
+// video has them, otherwise the audio track. Files go into a temp directory
+// that the returned cleanup func removes. Exactly one of srtPath/audioPath is set.
+func (d *Downloader) DownloadTranscriptSource(url string) (srtPath, audioPath string, cleanup func(), err error) {
+	if _, err := exec.LookPath("yt-dlp"); err != nil {
+		return "", "", nil, fmt.Errorf("yt-dlp not found in PATH. Please install it")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "go-clipper-*")
+	if err != nil {
+		return "", "", nil, err
+	}
+	cleanup = func() { _ = os.RemoveAll(tmpDir) }
+
+	// 1. Subtitles only. Errors are ignored: a video without subtitles falls back to audio.
+	subArgs := []string{
+		"--skip-download",
+		"--write-subs",
+		"--write-auto-subs",
+		"--sub-langs", "en.*",
+		"--convert-subs", "srt",
+		"--ignore-errors",
+		"--no-warnings",
+		"-o", filepath.ToSlash(filepath.Join(tmpDir, "subs.%(ext)s")),
+	}
+	subArgs = append(subArgs, d.commonArgs()...)
+	fmt.Printf("Fetching subtitles for transcript: %s\n", url)
+	_ = exec.Command("yt-dlp", append(subArgs, url)...).Run()
+
+	if matches, _ := filepath.Glob(filepath.Join(tmpDir, "*.srt")); len(matches) > 0 {
+		return matches[0], "", cleanup, nil
+	}
+
+	// 2. Audio only
+	audioArgs := []string{
+		"-f", "bestaudio/best",
+		"--no-warnings",
+		"-o", filepath.ToSlash(filepath.Join(tmpDir, "audio.%(ext)s")),
+		"--print", "after_move:filepath",
+	}
+	audioArgs = append(audioArgs, d.commonArgs()...)
+	fmt.Printf("No subtitles found, downloading audio for transcript: %s\n", url)
+
+	cmd := exec.Command("yt-dlp", append(audioArgs, url)...)
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+	if err := cmd.Run(); err != nil {
+		cleanup()
+		return "", "", nil, fmt.Errorf("failed to download audio: %v\nStderr: %s", err, stderrBuf.String())
+	}
+
+	lines := strings.Split(strings.TrimSpace(stdoutBuf.String()), "\n")
+	audioPath = strings.TrimSpace(lines[len(lines)-1])
+	if _, err := os.Stat(audioPath); err != nil {
+		cleanup()
+		return "", "", nil, fmt.Errorf("could not find downloaded audio. Output: %s", stdoutBuf.String())
+	}
+	return "", audioPath, cleanup, nil
 }
 
 func (d *Downloader) ExtractAudio(videoPath string) (string, error) {
@@ -127,7 +200,9 @@ func (d *Downloader) ExtractAudio(videoPath string) (string, error) {
 	return audioPath, nil
 }
 
-func (d *Downloader) FindSubtitleFile(videoPath string) string {
+// FindSubtitleFile returns the .srt that sits next to videoPath
+// (e.g. "Title.srt" or yt-dlp's "Title.en.srt"), or "" if there is none.
+func FindSubtitleFile(videoPath string) string {
 	dir := filepath.Dir(videoPath)
 	ext := filepath.Ext(videoPath)
 	baseWithoutExt := filepath.Base(videoPath[:len(videoPath)-len(ext)])
@@ -142,8 +217,8 @@ func (d *Downloader) FindSubtitleFile(videoPath string) string {
 			continue
 		}
 		name := file.Name()
-		// Check if it starts with the video base name and is a subtitle format (.srt or .vtt)
-		if strings.HasPrefix(name, baseWithoutExt) && (strings.HasSuffix(name, ".srt") || strings.HasSuffix(name, ".vtt")) {
+		// Require the "." after the base name so "Title" doesn't match "Title Part 2.en.srt"
+		if strings.HasPrefix(name, baseWithoutExt+".") && strings.HasSuffix(name, ".srt") {
 			return filepath.Join(dir, name)
 		}
 	}

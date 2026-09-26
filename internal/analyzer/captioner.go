@@ -14,9 +14,10 @@ import (
 
 type Captioner struct {
 	client *genai.Client
+	model  string
 }
 
-func NewCaptioner(ctx context.Context, apiKey string) (*Captioner, error) {
+func NewCaptioner(ctx context.Context, apiKey, model string) (*Captioner, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  apiKey,
 		Backend: genai.BackendGeminiAPI,
@@ -24,7 +25,7 @@ func NewCaptioner(ctx context.Context, apiKey string) (*Captioner, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Captioner{client: client}, nil
+	return &Captioner{client: client, model: model}, nil
 }
 
 func (c *Captioner) GenerateSRT(ctx context.Context, videoPath string) (string, error) {
@@ -84,8 +85,7 @@ Ensure the timestamps are precise and the text is natural English.`
 		genai.NewContentFromParts(parts, genai.RoleUser),
 	}
 
-	// Use the model name from analyzer.go
-	resp, err := c.client.Models.GenerateContent(ctx, "gemini-3-flash-preview", contents, nil)
+	resp, err := c.client.Models.GenerateContent(ctx, c.model, contents, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate content: %v", err)
 	}

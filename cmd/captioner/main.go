@@ -18,7 +18,7 @@ func main() {
 	ctx := context.Background()
 
 	// 2. Initialize Captioner
-	cp, err := analyzer.NewCaptioner(ctx, cfg.GeminiAPIKeyForCaption)
+	_, cp, err := analyzer.NewFromConfig(ctx, cfg)
 	if err != nil {
 		log.Fatalf("Error initializing captioner: %v", err)
 	}

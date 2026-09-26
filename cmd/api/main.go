@@ -17,22 +17,19 @@ func main() {
 	cfg := config.LoadConfig()
 	ctx := context.Background()
 
-	analyzer, err := analyzer2.NewAnalyzer(ctx, cfg.GeminiAPIKey)
+	analyzer, captioner, err := analyzer2.NewFromConfig(ctx, cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Printf("Using AI provider: %s", cfg.Provider)
 
-	captioner, err := analyzer2.NewCaptioner(ctx, cfg.GeminiAPIKeyForCaption)
-	if err != nil {
-		log.Fatalf("Error initializing captioner: %v", err)
-	}
-
-	clipperController := controllers.NewClipperController(*analyzer, *captioner)
+	clipperController := controllers.NewClipperController(analyzer, captioner)
 
 	api := r.Group("/api/v1")
 	{
 		api.POST("/clipper", clipperController.Create)
 		api.POST("/download", clipperController.Download)
+		api.POST("/download/instagram", clipperController.DownloadInstagram)
 		api.POST("/analyze", clipperController.Analyze)
 		api.POST("/generate-description", clipperController.GenerateDescription)
 		api.POST("/clipper/captions", clipperController.GenerateCaption)

@@ -44,9 +44,21 @@ type CutClipPayload struct {
 	EndSeconds      string `json:"end_seconds"`
 }
 
+type ClipResult struct {
+	ClipPath       string `json:"clip_path"`
+	SrtPath        string `json:"srt_path,omitempty"`
+	SubtitleSource string `json:"subtitle_source,omitempty"` // "youtube" or "ai"
+}
+
 type GenerateCaptionRequest struct {
 	ClipsPath  string   `json:"clips_path"`
 	VideosPath []string `json:"videos_path"`
+}
+
+type DownloadInstagramRequest struct {
+	Url            string `json:"url" binding:"required"`
+	IncludeVideos  bool   `json:"include_videos"`  // Also keep the video slides of a carousel
+	CookiesBrowser string `json:"cookies_browser"` // e.g. "firefox"; Instagram usually needs a logged-in session
 }
 
 type DownloadVideoRequest struct {

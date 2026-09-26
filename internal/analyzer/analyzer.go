@@ -21,9 +21,10 @@ type SubtitleLine struct {
 
 type Analyzer struct {
 	client *genai.Client
+	model  string
 }
 
-func NewAnalyzer(ctx context.Context, apiKey string) (*Analyzer, error) {
+func NewAnalyzer(ctx context.Context, apiKey, model string) (*Analyzer, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  apiKey,
 		Backend: genai.BackendGeminiAPI,
@@ -31,42 +32,14 @@ func NewAnalyzer(ctx context.Context, apiKey string) (*Analyzer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Analyzer{client: client}, nil
+	return &Analyzer{client: client, model: model}, nil
 }
 
 func (a *Analyzer) AnalyzeVideoUrl(ctx context.Context, url string, payload dtos.AnalyzeRequest) (*dtos.AnalysisResult, error) {
 	start := time.Now()
 
-	if payload.StartTimestamp == "" {
-		payload.StartTimestamp = "start"
-	}
-
-	if payload.EndTimestamp == "" {
-		payload.EndTimestamp = "end"
-	}
-
 	log.Printf("Analyzing video url: %s", url)
-	prompt := fmt.Sprintf(`
-		Analyze the provided video.
-		1. Identify exactly %d of the most engaging and "viral" segments that would make great short-form clips (TikTok, Reels, Shorts).
-		2. Ensure each segment is at least %d seconds long and maximum %d seconds.
-		3. For each segment, provide the start and end timestamps (in seconds). THESE ARE MANDATORY.
-		4. Provide a brief description and a compelling "hook" title for each clip. THE HOOK MUST NOT BE EMPTY.
-		5. Analyze only from duration %s to %s
-
-		Output the result as a single JSON object in the following format:
-		{
-			"description": "Short summary of the video",
-			"segments": [
-				{
-					"start": "30",
-					"end": "60",
-					"description": "Deep insight about AI",
-					"hook": "The Truth About AI"
-				}
-			]
-		}
-	`, payload.Count, payload.MinimumDuration, payload.MaximumDuration, payload.StartTimestamp, payload.EndTimestamp)
+	prompt := analyzePrompt(payload, "Analyze the provided video.")
 
 	// Clean YouTube URL to remove extra parameters
 	cleanURL := url
@@ -112,7 +85,7 @@ func (a *Analyzer) AnalyzeVideoUrl(ctx context.Context, url string, payload dtos
 
 	resp, err := a.client.Models.GenerateContent(
 		ctx,
-		"gemini-3-flash-preview",
+		a.model,
 		contents,
 		config,
 	)
@@ -171,18 +144,7 @@ func (a *Analyzer) AnalyzeVideoUrl(ctx context.Context, url string, payload dtos
 func (a *Analyzer) GenerateDescription(ctx context.Context, url string) (*dtos.DescriptionResult, error) {
 	start := time.Now()
 
-	prompt := fmt.Sprintf(`
-		Create caption/description for this youtube video %s.
-		1. Include the tags to separate by commas without # with At least 400 characters. MANDATORY. Make sure at leas 400 characters. Make sure it will help content viral.
-		2. No timestamp/seconds in the description.
-		3. Will repost this in youtube short and instagram
-
-		Output the result as a single JSON object in the following format:
-		{
-			"description": "The chaos continues in this TRIP",
-			"tags": "viral video, funny, fun"
-		}
-	`, url)
+	prompt := descriptionPrompt(fmt.Sprintf("Create caption/description for this youtube video %s.", url))
 
 	cleanURL := url
 	if strings.Contains(cleanURL, "watch?v=") {
@@ -215,7 +177,7 @@ func (a *Analyzer) GenerateDescription(ctx context.Context, url string) (*dtos.D
 
 	resp, err := a.client.Models.GenerateContent(
 		ctx,
-		"gemini-3-flash-preview",
+		a.model,
 		contents,
 		config,
 	)

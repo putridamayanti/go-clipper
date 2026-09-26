@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go-clipper/internal/dtos"
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -212,9 +213,11 @@ func (p *Processor) generateSRT(path string, subtitles []SubtitleLine) error {
 }
 
 func formatSRTTime(seconds float64) string {
-	h := int(seconds) / 3600
-	m := (int(seconds) % 3600) / 60
-	s := int(seconds) % 60
-	ms := int((seconds - float64(int(seconds))) * 1000)
+	// Round to whole milliseconds first to avoid float truncation (e.g. 1.001 -> 1.000)
+	totalMs := int(math.Round(seconds * 1000))
+	h := totalMs / 3600000
+	m := (totalMs % 3600000) / 60000
+	s := (totalMs % 60000) / 1000
+	ms := totalMs % 1000
 	return fmt.Sprintf("%02d:%02d:%02d,%03d", h, m, s, ms)
 }
